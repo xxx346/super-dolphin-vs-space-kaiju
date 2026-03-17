@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>超级豚大战太空怪物（别笑你也过不了第二关）</title>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;display:flex;justify-content:center;align-items:center;height:100vh;font-family:Arial}
+
+.game{width:500px;height:700px;position:relative;overflow:hidden;border:3px solid #fff;background:#000}
+.layer{position:absolute;width:100%;height:100%}
+.ui{position:absolute;top:10px;width:100%;text-align:center;color:#fff;z-index:1000}
+
+.hp-bar{width:220px;height:18px;background:#333;margin:5px auto;border-radius:10px;overflow:hidden}
+.hp-inner{height:100%;width:100%;background:#2ecc71}
+
+.player{
+  width:70px;
+  height:70px;
+  position:absolute;
+  bottom:30px;
+  left:215px;
+
+  /* 使用玩家图片 */
+  background: url('/super-dolphin-vs-space-kaiju/WWN.jpg') no-repeat center/contain;
+  border-radius:0;
+}
+
+.bullet{width:6px;height:16px;background:#0ff;position:absolute}
+
+.item{width:50px;height:50px;position:absolute;display:flex;align-items:center;justify-content:center;color:#fff;border-radius:8px;font-weight:bold}
+.monster{background:#9b59b6}
+.mul{background:#f1c40f}
+.dmg{background:#3498db}
+.heal{background:#2ecc71}
+.hpmul{background:#e67e22}
+
+.over{
+  position:absolute;
+  width:100%;
+  height:100%;
+  background:rgba(0,0,0,.8);
+  display:none;
+  justify-content:center;
+  align-items:center;
+  color:#fff;
+  z-index:2000;
+  flex-direction:column;
+}
+
+button{
+  margin-top:15px;
+  padding:10px 20px;
+  font-size:16px;
+  border:none;
+  background:#0ff;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="game">
+  <div class="layer" id="layer"></div>
+
+  <div class="ui">
+    ❤️ <span id="hpText">4</span>
+    <div class="hp-bar"><div class="hp-inner" id="hpBar"></div></div>
+    分: <span id="score">0</span>
+    子弹: <span id="bulletCount">1</span>
+    伤害: <span id="damageMul">1</span>
+    波: <span id="wave">0</span>
+  </div>
+
+  <div class="player" id="p"></div>
+
+  <div class="over" id="go">
+    <div>
+      游戏结束
+      <br>
+      <button onclick="restart()">重新开始</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const game=document.querySelector('.game');
+const layer=document.getElementById('layer');
+const p=document.getElementById('p');
+
+let hp=4,maxHp=8,score=0,bulletCount=1,damageMul=1,wave=0,gameEnd=false;
+let targetX=215,currentX=215;
+let timers=[],monsters=[],waveTaken=false;
+
+/* UI */
+const hpText=document.getElementById('hpText');
+const hpBar=document.getElementById('hpBar');
+const scoreEl=document.getElementById('score');
+const bulletEl=document.getElementById('bulletCount');
+const dmgEl=document.getElementById('damageMul');
+const waveEl=document.getElementById('wave');
+
+/* 血条 */
+function updateHP(){
+  hp=Math.max(0,Math.min(maxHp,hp));
+  hpText.textContent=hp;
+  let pcent=hp/maxHp*100;
+  hpBar.style.width=pcent+'%';
+  hpBar.style.background=pcent>60?'#2ecc71':pcent>30?'#f1c40f':'#e74c3c';
+}
+
+/* 控制 */
+function setX(x){
+  const r=game.getBoundingClientRect();
+  targetX=Math.max(0,Math.min(430,x-r.left));
+}
+game.onmousemove=e=>!gameEnd&&setX(e.clientX);
+game.ontouchmove=e=>{if(gameEnd)return;setX(e.touches[0].clientX);e.preventDefault();};
+
+/* 平滑移动 */
+(function move(){
+  if(!gameEnd){
+    currentX+=(targetX-currentX)*0.2;
+    p.style.left=currentX+'px';
+    requestAnimationFrame(move);
+  }
+})();
+
+/* 碰撞 */
+function hit(a,b){
+  let r1=a.getBoundingClientRect(),r2=b.getBoundingClientRect();
+  return !(r1.bottom<r2.top||r1.top>r2.bottom||r1.right<r2.left||r1.left>r2.right);
+}
+
+/* 子弹 */
+function shoot(){
+  if(gameEnd) return;
+
+  let pr=p.getBoundingClientRect();
+  let gr=game.getBoundingClientRect();
+
+  let center=pr.left-gr.left+pr.width/2;
+  let startY=pr.top-gr.top;
+
+  let gap=18;
+  let total=(bulletCount-1)*gap;
+
+  for(let i=0;i<bulletCount;i++){
+    let b=document.createElement('div');
+    b.className='bullet';
+
+    let offset=i*gap-total/2;
+
+    b.style.left=(center+offset-3)+'px';
+    b.style.top=startY+'px';
+
+    layer.appendChild(b);
+
+    let t=setInterval(()=>{ 
+      let y=parseInt(b.style.top)-8;
+      b.style.top=y+'px';
+
+      if(y<0){
+        clearInterval(t);
+        b.remove();
+        return;
+      }
+
+      monsters.forEach((m,idx)=>{
+        if(hit(b,m.el)){
+          m.hp-=damageMul;
+          m.el.textContent='👿'+m.hp;
+
+          clearInterval(t);
+          b.remove();
+
+          if(m.hp<=0){
+            score+=10;
+            scoreEl.textContent=score;
+            m.el.remove();
+            monsters.splice(idx,1);
+          }
+        }
+      });
+
+    },30);
+
+    timers.push(t);
+  }
+}
+
+function getFireRate(){
+  return Math.max(400,2000-bulletCount*120);
+}
+
+function startShooting(){
+  function loop(){
+    if(gameEnd) return;
+    shoot();
+    setTimeout(loop,getFireRate());
+  }
+  loop();
+}
+startShooting();
+
+/* 波次 */
+function nextWave(){
+  if(gameEnd)return;
+  wave++; waveTaken=false;
+  waveEl.textContent=wave;
+
+  if(wave<=3){
+    spawnItem('left');
+    spawnItem('right');
+    return;
+  }
+
+  let side=Math.random()>0.5?'left':'right';
+  spawnMonster(side);
+  spawnItem(side==='left'?'right':'left');
+}
+timers.push(setInterval(nextWave,4000));
+
+/* 生成 */
+function spawnMonster(side){
+  let m=document.createElement('div');
+  m.className='item monster';
+  let h=Math.floor(Math.random()*5)+3;
+  m.textContent='👿'+h;
+  m.style.left=side==='left'?'100px':'350px';
+  m.style.top='0px';
+  layer.appendChild(m);
+
+  let obj={el:m,hp:h};
+  monsters.push(obj);
+  fall(obj,true);
+}
+
+function spawnItem(side){
+  let r=Math.random(),c,t;
+  if(r<0.25){c='mul';t='×2'}
+  else if(r<0.5){c='dmg';t='+1'}
+  else if(r<0.75){c='heal';t='❤️'}
+  else{c='hpmul';t='HP×2'}
+
+  let d=document.createElement('div');
+  d.className='item '+c;
+  d.textContent=t;
+  d.style.left=side==='left'?'100px':'350px';
+  d.style.top='0px';
+  layer.appendChild(d);
+
+  fall({el:d,type:c},false);
+}
+
+/* 掉落 */
+function fall(o,isMonster){
+  let handled=false;
+
+  let t=setInterval(()=>{
+    if(gameEnd){clearInterval(t);return;}
+
+    let y=parseInt(o.el.style.top)+3;
+    o.el.style.top=y+'px';
+
+    if(y>650 && !handled){
+      handled=true;
+      if(isMonster){
+        hp-=o.hp;
+        updateHP();
+      }
+      o.el.remove();
+      clearInterval(t);
+      if(hp<=0)end();
+    }
+
+    if(hit(p,o.el) && !handled){
+      handled=true;
+      clearInterval(t);
+
+      if(isMonster){
+        hp-=1;
+        updateHP();
+        if(hp<=0)end();
+      }else{
+        if(waveTaken){o.el.remove();return;}
+        waveTaken=true;
+
+        if(o.type==='mul'){damageMul*=2;dmgEl.textContent=damageMul;}
+        if(o.type==='dmg'){bulletCount++;bulletEl.textContent=bulletCount;}
+        if(o.type==='heal'){hp++;updateHP();}
+        if(o.type==='hpmul'){hp*=2;updateHP();}
+      }
+
+      o.el.remove();
+    }
+
+  },30);
+
+  timers.push(t);
+}
+
+/* 结束 */
+function end(){
+  gameEnd=true;
+  document.getElementById('go').style.display='flex';
+  timers.forEach(clearInterval);
+}
+
+/* ⭐ 重开 */
+function restart(){
+  location.reload(); // 简单刷新版
+}
+
+/* 初始化 */
+updateHP();
+</script>
+
+</body>
+</html>
